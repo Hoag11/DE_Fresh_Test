@@ -1,0 +1,18 @@
+{
+  "name": "mysql-app-connector",
+  "config": {
+    "connector.class": "io.debezium.connector.mysql.MySqlConnector",
+    "database.hostname": "mysql-app",
+    "database.port": "3306",
+    "database.user": "appuser",
+    "database.password": "appuser",
+    "database.server.id": "223344",
+    "database.server.name": "appdb",
+    "database.include.list": "appdb",
+    "table.include.list": "appdb.accounts,appdb.products,appdb.sales_pipeline,appdb.sales_teams",
+    "include.schema.changes": "false",
+    "topic.prefix": "appdb",
+    "database.history.kafka.bootstrap.servers": "kafka:9092",
+    "database.history.kafka.topic": "schema-changes.appdb"
+  }
+}

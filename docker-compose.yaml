@@ -1,0 +1,78 @@
+services:
+  kafka:
+    image: quay.io/debezium/kafka:${DEBEZIUM_VERSION}
+    ports:
+      - 9092:9092
+      - 9093:9093
+    environment:
+      - CLUSTER_ID=oh-sxaDRTcyAr6pFRbXyzA
+      - NODE_ID=1
+      - NODE_ROLE=combined
+      - KAFKA_CONTROLLER_QUORUM_VOTERS=1@kafka:9093
+      - KAFKA_LISTENERS=PLAINTEXT://kafka:9092,CONTROLLER://kafka:9093
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092
+    networks:
+        - tit_test_de
+
+  mysql_app:
+    ports:
+      - 33060:3306
+    image: quay.io/debezium/example-mysql-master:latest
+    environment:
+     - MYSQL_ROOT_PASSWORD=root
+     - MYSQL_USER=admin
+     - MYSQL_PASSWORD=admin
+     - MYSQL_DATABASE=app
+    container_name:
+      mysql-master
+    networks:
+        - tit_test_de
+
+  mysql_bi:
+    ports:
+      - 33061:3306
+    image: quay.io/debezium/example-mysql-replica:latest
+    environment:
+     - MYSQL_ROOT_PASSWORD=root
+     - MYSQL_USER=admin
+     - MYSQL_PASSWORD=admin
+     - MYSQL_DATABASE=warehouse
+    container_name:
+      mysql-bi
+    depends_on:
+      - mysql_app
+    networks:
+        - tit_test_de
+
+  connect:
+    image: quay.io/debezium/connect:${DEBEZIUM_VERSION}
+    ports:
+     - 8083:8083
+    depends_on:
+     - kafka
+     - mysql_bi
+    environment:
+     - BOOTSTRAP_SERVERS=kafka:9092
+     - GROUP_ID=1
+     - CONFIG_STORAGE_TOPIC=3tit_connect_configs
+     - OFFSET_STORAGE_TOPIC=3tit_connect_offsets
+    networks:
+        - tit_test_de
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    depends_on:
+      - kafka
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+    ports:
+      - "8888:8080"
+    networks:
+        - tit_test_de
+
+networks:
+  tit_test_de:
+    external: true
+    
