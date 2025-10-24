@@ -307,6 +307,8 @@ services:
       _AIRFLOW_WWW_USER_PASSWORD: ${_AIRFLOW_WWW_USER_PASSWORD:-airflow}
       _PIP_ADDITIONAL_REQUIREMENTS: ''
     user: "0:0"
+    networks:
+      - tit_test_de
 
   airflow-cli:
     <<: *airflow-common
@@ -355,3 +357,4 @@ volumes:
 networks:
   tit_test_de:
     external: true
+    
