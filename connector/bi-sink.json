@@ -1,0 +1,15 @@
+{
+  "name": "mysql-sink-connector",
+  "config": {
+    "connector.class": "io.confluent.connect.jdbc.JdbcSinkConnector",
+    "topics": "appdb.app.accounts",
+    "connection.url": "jdbc:mysql://mysql-bi:3306/warehouse",
+    "connection.user": "admin",
+    "connection.password": "admin",
+    "auto.create": "true",
+    "auto.evolve": "true",
+    "insert.mode": "upsert",
+    "pk.fields": "id",
+    "pk.mode": "record_key"
+  }
+}

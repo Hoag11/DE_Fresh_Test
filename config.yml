@@ -1,0 +1,8 @@
+kafka:
+  clusters:
+    - name: local-cluster
+      bootstrapServers: kafka:9092
+      schemaRegistry: http://schema-registry:8081
+      kafkaConnect:
+        - name: connect-cluster
+          address: http://kafka-connect:8083

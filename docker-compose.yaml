@@ -1,88 +1,163 @@
 services:
   kafka:
-    image: quay.io/debezium/kafka:${DEBEZIUM_VERSION}
+    image: confluentinc/cp-kafka:latest
+    container_name: kafka
+    hostname: kafka
     ports:
       - 9092:9092
-      - 9093:9093
     environment:
-      - CLUSTER_ID=oh-sxaDRTcyAr6pFRbXyzA
-      - NODE_ID=1
-      - NODE_ROLE=combined
-      - KAFKA_CONTROLLER_QUORUM_VOTERS=1@kafka:9093
-      - KAFKA_LISTENERS=PLAINTEXT://kafka:9092,CONTROLLER://kafka:9093
-      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_LISTENERS: PLAINTEXT://kafka:9092,CONTROLLER://kafka:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+    volumes:
+      - kafka-data:/var/lib/kafka/data
     networks:
-        - tit_test_de
+      - tit_test_de
+    healthcheck:
+      test: ["CMD", "bash", "-c", "kafka-topics --bootstrap-server kafka:9092 --list || exit 1"]
+      interval: 10s
+      retries: 15
+      start_period: 40s
+    restart: always
+
+  schema-registry:
+    image: confluentinc/cp-schema-registry:latest
+    container_name: schema-registry
+    hostname: schema-registry
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - 8081:8081
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: PLAINTEXT://kafka:9092
+      SCHEMA_REGISTRY_KAFKASTORE_TOPIC_REPLICATION_FACTOR: 1
+      SCHEMA_REGISTRY_MASTER_ELIGIBILITY: true
+      SCHEMA_REGISTRY_SESSION_TIMEOUT_MS: 60000
+      SCHEMA_REGISTRY_KAFKASTORE_TIMEOUT_MS: 60000
+      SCHEMA_REGISTRY_KAFKASTORE_INIT_TIMEOUT_MS: 60000
+      SCHEMA_REGISTRY_LEADER_ELECTOR_RETRY_BACKOFF_MS: 10000
+    networks:
+      - tit_test_de
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://schema-registry:8081/subjects"]
+      interval: 10s
+      retries: 15
+      start_period: 60s
+      timeout: 10s
+    restart: always
+
+  kafka-connect:
+    image: confluentinc/cp-kafka-connect:latest
+    container_name: kafka-connect
+    hostname: kafka-connect
+    depends_on:
+      kafka:
+        condition: service_healthy
+      schema-registry:
+        condition: service_started
+    ports:
+      - 8083:8083
+    environment:
+      CONNECT_BOOTSTRAP_SERVERS: kafka:9092
+      CONNECT_REST_ADVERTISED_HOST_NAME: kafka-connect
+      CONNECT_REST_PORT: 8083
+      CONNECT_GROUP_ID: connect-cluster
+      CONNECT_CONFIG_STORAGE_TOPIC: _connect-configs
+      CONNECT_OFFSET_STORAGE_TOPIC: _connect-offsets
+      CONNECT_STATUS_STORAGE_TOPIC: _connect-status
+      CONNECT_KEY_CONVERTER: org.apache.kafka.connect.storage.StringConverter
+      CONNECT_VALUE_CONVERTER: io.confluent.connect.avro.AvroConverter
+      CONNECT_VALUE_CONVERTER_SCHEMA_REGISTRY_URL: http://schema-registry:8081
+      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_PLUGIN_PATH: /usr/share/java,/usr/share/confluent-hub-components,/data/connect-plugin-jars
+    volumes:
+      - ./volumes/connect-plugin-jars:/data/connect-plugin-jars
+    networks:
+      - tit_test_de
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://kafka-connect:8083/connectors"]
+      interval: 10s
+      retries: 10
+      start_period: 40s
+    restart: always
 
   mysql_app:
+    image: mysql:8.0
+    container_name: mysql-app
+    hostname: mysql-app
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_USER: admin
+      MYSQL_PASSWORD: admin
+      MYSQL_DATABASE: app
+    command:
+      --server-id=1
+      --log-bin=mysql-bin
+      --binlog-format=ROW
+      --binlog-row-image=FULL
+      --expire-logs-days=1
     ports:
       - 3306:3306
-    image: mysql:8.0
-    environment:
-     - MYSQL_ROOT_PASSWORD=root
-     - MYSQL_USER=admin
-     - MYSQL_PASSWORD=admin
-     - MYSQL_DATABASE=app
-    container_name:
-      mysql-app
-    networks:
-        - tit_test_de
     volumes:
-      - ./sql/app.sql:/sql/app.sql
+      - ./sql/app.sql:/docker-entrypoint-initdb.d/app.sql
       - mysql-app_data:/var/lib/mysql
+    networks:
+      - tit_test_de
+    restart: always
 
   mysql_bi:
-    ports:
-      - 3316:3306
     image: mysql:8.0
-    environment:
-     - MYSQL_ROOT_PASSWORD=root
-     - MYSQL_USER=admin
-     - MYSQL_PASSWORD=admin
-     - MYSQL_DATABASE=warehouse
-    container_name:
-      mysql-bi
+    container_name: mysql-bi
+    hostname: mysql-bi
     depends_on:
       - mysql_app
-    networks:
-        - tit_test_de
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_USER: admin
+      MYSQL_PASSWORD: admin
+      MYSQL_DATABASE: warehouse
+    ports:
+      - 3316:3306
     volumes:
-      - ./sql/warehouse.sql:/sql/warehouse.sql
-      - mysql_bi_data:/var/lib/mysql
-
-  connect:
-    image: quay.io/debezium/connect:${DEBEZIUM_VERSION}
-    ports:
-     - 8083:8083
-    depends_on:
-     - kafka
-     - mysql_bi
-    environment:
-     - BOOTSTRAP_SERVERS=kafka:9092
-     - GROUP_ID=1
-     - CONFIG_STORAGE_TOPIC=3tit_connect_configs
-     - OFFSET_STORAGE_TOPIC=3tit_connect_offsets
+      - ./sql/app.sql:/docker-entrypoint-initdb.d/app.sql
+      - mysql-bi_data:/var/lib/mysql
     networks:
-      tit_test_de:
+      - tit_test_de
+    restart: always
 
-  kafka-ui:
-    image: provectuslabs/kafka-ui:latest
-    container_name: kafka-ui
-    depends_on:
-      - kafka
-    environment:
-      KAFKA_CLUSTERS_0_NAME: local
-      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+  kafbat-ui:
+    image: ghcr.io/kafbat/kafka-ui:latest
+    container_name: kafbat-ui
     ports:
-      - "8888:8080"
+      - 8080:8080
+    environment:
+      DYNAMIC_CONFIG_ENABLED: 'true'
+    volumes:
+      - ./config.yml:/etc/kafkaui/dynamic_config.yaml
     networks:
-        - tit_test_de
+      - tit_test_de
+    restart: always
 
 volumes:
-  mysql_bi_data:
+  kafka-data:
   mysql-app_data:
+  mysql-bi_data:
 
 networks:
   tit_test_de:
-    external: true
-    
+    driver: bridge
